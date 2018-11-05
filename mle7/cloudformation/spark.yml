@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Resources for MLE7
+Parameters:
+  SSHKey:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: SSH key for accessing EMR instances
+  Subnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet into which instances are placed
+Resources:
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: mle7-data
+      Tags:
+        - Key: project
+          Value: ml-engineer
+  LogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: mle7-logs
+      Tags:
+        - Key: project
+          Value: ml-engineer
+  Spark:
+    Type: AWS::EMR::Cluster
+    Properties:
+      Name: MLE7
+      JobFlowRole: !Ref EmrEc2InstanceProfile
+      ReleaseLabel: emr-5.16.0
+      Applications:
+        - Name: Spark
+        - Name: Zeppelin
+        - Name: JupyterHub
+        - Name: Livy
+      LogUri: !Sub 's3://${LogBucket}'
+      ServiceRole: !Ref EmrRole
+      VisibleToAllUsers: true
+      Tags:
+        - Key: project
+          Value: ml-engineer
+      Instances:
+        Ec2KeyName: !Ref SSHKey
+        Ec2SubnetId: !Ref Subnet
+        MasterInstanceGroup:
+          InstanceCount: 1
+          Market: ON_DEMAND
+          InstanceType: c5.xlarge
+          Name: Master
+        CoreInstanceGroup:
+          InstanceCount: 2
+          Market: ON_DEMAND
+          InstanceType: c5.2xlarge
+          Name: Slave
+        AdditionalMasterSecurityGroups:
+          - !GetAtt MasterSecurityGroup.GroupId
+  MasterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: mle7
+      GroupDescription: Access for MLE Exercise 7
+      SecurityGroupIngress:
+        - CidrIp: "87.236.156.202/32"
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          Description: SSH access from Solita
+  EmrRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2008-10-17
+        Statement:
+          - Sid: 'ServiceRole'
+            Effect: Allow
+            Principal:
+              Service: elasticmapreduce.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceRole'
+  EmrEc2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2008-10-17
+        Statement:
+          - Sid: 'EC2Role'
+            Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceforEC2Role'
+      Policies:
+        - PolicyName: Mle7S3
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "s3:*"
+                Resource: !Sub '${DataBucket.Arn}/*'
+  EmrEc2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref EmrEc2Role
